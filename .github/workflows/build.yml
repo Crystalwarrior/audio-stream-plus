@@ -48,7 +48,11 @@ jobs:
         shell: bash
         run: |
           cd addons/audiostreamplus
-          zip -r ../../${{ matrix.platform }}-${{ matrix.arch }}.zip .
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip ../../${{ matrix.platform }}-${{ matrix.arch }}.zip . > /dev/null
+          else
+            zip -r ../../${{ matrix.platform }}-${{ matrix.arch }}.zip .
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.platform }}-${{ matrix.arch }}
