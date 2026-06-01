@@ -7,12 +7,30 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build:
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        arch: [x86_64, x86_32, arm64]
+        include:
+          - os: windows-latest
+            platform: windows
+            arch: x86_64
+          - os: windows-latest
+            platform: windows
+            arch: x86_32
+          - os: windows-latest
+            platform: windows
+            arch: arm64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x86_64
+          - os: macos-latest
+            platform: macos
+            arch: x86_64
+          - os: macos-latest
+            platform: macos
+            arch: arm64
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,58 +40,38 @@ jobs:
           python-version: "3.11"
       - name: Install SCons
         run: pip install scons
-      - name: Build debug
-        run: scons platform=windows arch=${{ matrix.arch }} target=template_debug
-      - name: Build release
-        run: scons platform=windows arch=${{ matrix.arch }} target=template_release
+      - name: Build (debug + release)
+        run: |
+          scons platform=${{ matrix.platform }} arch=${{ matrix.arch }} target=template_debug
+          scons platform=${{ matrix.platform }} arch=${{ matrix.arch }} target=template_release
+      - name: Package
+        shell: bash
+        run: |
+          cd addons/audiostreamplus
+          zip -r ../../${{ matrix.platform }}-${{ matrix.arch }}.zip .
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-${{ matrix.arch }}
-          path: addons/audiostreamplus/*.dll
+          name: ${{ matrix.platform }}-${{ matrix.arch }}
+          path: ${{ matrix.platform }}-${{ matrix.arch }}.zip
           if-no-files-found: error
 
-  build-linux:
+  release:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          submodules: recursive
-      - uses: actions/setup-python@v5
+          path: artifacts
+      - uses: ncipollo/release-action@v1
         with:
-          python-version: "3.11"
-      - name: Install SCons
-        run: pip install scons
-      - name: Build x86_64 debug
-        run: scons platform=linux arch=x86_64 target=template_debug
-      - name: Build x86_64 release
-        run: scons platform=linux arch=x86_64 target=template_release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: linux-x86_64
-          path: addons/audiostreamplus/*.so
-          if-no-files-found: error
-
-  build-macos:
-    runs-on: macos-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x86_64, arm64]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install SCons
-        run: pip install scons
-      - name: Build debug
-        run: scons platform=macos arch=${{ matrix.arch }} target=template_debug
-      - name: Build release
-        run: scons platform=macos arch=${{ matrix.arch }} target=template_release
-      - uses: actions/upload-artifact@v4
-        with:
-          name: macos-${{ matrix.arch }}
-          path: addons/audiostreamplus/*.framework
-          if-no-files-found: error
+          tag: nightly
+          name: Nightly build
+          body: "Automated build from commit ${{ github.sha }}."
+          artifacts: artifacts/**/*.zip
+          prerelease: true
+          allowUpdates: true
+          replacesArtifacts: true
+          removeArtifacts: true
